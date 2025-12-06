@@ -7,18 +7,30 @@ import { chat, chunk, user } from "@/schema";
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
 // https://authjs.dev/reference/adapter/drizzle
-let client = postgres(`${process.env.POSTGRES_URL!}?sslmode=require`);
-let db = drizzle(client);
+let client: ReturnType<typeof postgres> | null = null;
+let db: ReturnType<typeof drizzle> | null = null;
+
+function getDb() {
+  if (!db) {
+    const connectionString = process.env.POSTGRES_URL;
+    if (!connectionString) {
+      throw new Error('POSTGRES_URL environment variable is not set');
+    }
+    client = postgres(`${connectionString}?sslmode=require`);
+    db = drizzle(client);
+  }
+  return db;
+}
 
 export async function getUser(email: string) {
-  return await db.select().from(user).where(eq(user.email, email));
+  return await getDb().select().from(user).where(eq(user.email, email));
 }
 
 export async function createUser(email: string, password: string) {
   let salt = genSaltSync(10);
   let hash = hashSync(password, salt);
 
-  return await db.insert(user).values({ email, password: hash });
+  return await getDb().insert(user).values({ email, password: hash });
 }
 
 export async function createMessage({
@@ -30,10 +42,10 @@ export async function createMessage({
   messages: any;
   author: string;
 }) {
-  const selectedChats = await db.select().from(chat).where(eq(chat.id, id));
+  const selectedChats = await getDb().select().from(chat).where(eq(chat.id, id));
 
   if (selectedChats.length > 0) {
-    return await db
+    return await getDb()
       .update(chat)
       .set({
         messages: JSON.stringify(messages),
@@ -41,7 +53,7 @@ export async function createMessage({
       .where(eq(chat.id, id));
   }
 
-  return await db.insert(chat).values({
+  return await getDb().insert(chat).values({
     id,
     createdAt: new Date(),
     messages: JSON.stringify(messages),
@@ -50,7 +62,7 @@ export async function createMessage({
 }
 
 export async function getChatsByUser({ email }: { email: string }) {
-  return await db
+  return await getDb()
     .select()
     .from(chat)
     .where(eq(chat.author, email))
@@ -58,12 +70,12 @@ export async function getChatsByUser({ email }: { email: string }) {
 }
 
 export async function getChatById({ id }: { id: string }) {
-  const [selectedChat] = await db.select().from(chat).where(eq(chat.id, id));
+  const [selectedChat] = await getDb().select().from(chat).where(eq(chat.id, id));
   return selectedChat;
 }
 
 export async function insertChunks({ chunks }: { chunks: any[] }) {
-  return await db.insert(chunk).values(chunks);
+  return await getDb().insert(chunk).values(chunks);
 }
 
 export async function getChunksByFilePaths({
@@ -71,7 +83,7 @@ export async function getChunksByFilePaths({
 }: {
   filePaths: Array<string>;
 }) {
-  return await db
+  return await getDb()
     .select()
     .from(chunk)
     .where(inArray(chunk.filePath, filePaths));
@@ -82,5 +94,5 @@ export async function deleteChunksByFilePath({
 }: {
   filePath: string;
 }) {
-  return await db.delete(chunk).where(eq(chunk.filePath, filePath));
+  return await getDb().delete(chunk).where(eq(chunk.filePath, filePath));
 }
